@@ -22,6 +22,7 @@
 #include "msccl/msccl_setup.h"
 #include "msccl/msccl_status.h"
 
+
 #ifdef ENABLE_MSCCLPP
 #include "mscclpp/mscclpp_nccl.h"
 #endif
@@ -496,6 +497,9 @@ static inline bool isMscclppAllReduceSupported(ncclDataType_t dataType, ncclRedO
 }
 #endif
 
+
+
+
 ncclResult_t mscclEnqueueCheck(
     const void* sendBuff, const size_t sendCounts[], const size_t sDisPls[],
     void* recvBuff, const size_t recvCounts[], const size_t rDisPls[],
@@ -520,8 +524,15 @@ ncclResult_t mscclEnqueueCheck(
           NCCLCHECK(mscclGetCaptureStatus(comm->rank, stream));
         }
 
+        bool sendBuffRegistered = false; 
+        bool recvBuffRegistered = false; 
+        mscclpp_ncclBuffIsRegistered(comm->mscclpp_comm, sendBuff, count, &sendBuffRegistered);
+        mscclpp_ncclBuffIsRegistered(comm->mscclpp_comm, sendBuff, count, &recvBuffRegistered);
+        const bool graphMode = threadLocalStatus.captureStatus != mscclNoCapture;
+        const bool buffsRegistedNonGraphMode = !graphMode && sendBuffRegistered && recvBuffRegistered;
+
         /* check if one rank per GPU and graph mode is enabled */
-        if ((threadLocalStatus.captureStatus != mscclNoCapture) && comm->mscclCompatible && nBytes > 0 && (nBytes & 31) == 0) {
+        if ((graphMode || buffsRegistedNonGraphMode) && comm->mscclCompatible && nBytes > 0 && (nBytes & 31) == 0) {
           bool isManagedBuffer = false;
           if (sendBuff) CUDACHECK(hipPointerGetAttribute(&isManagedBuffer, HIP_POINTER_ATTRIBUTE_IS_MANAGED, const_cast<void*>(sendBuff)));
           if (!isManagedBuffer && recvBuff) CUDACHECK(hipPointerGetAttribute(&isManagedBuffer, HIP_POINTER_ATTRIBUTE_IS_MANAGED, const_cast<void*>(recvBuff)));
@@ -561,8 +572,15 @@ ncclResult_t mscclEnqueueCheck(
           NCCLCHECK(mscclGetCaptureStatus(comm->rank, stream));
         }
 
+        bool sendBuffRegistered = false; 
+        bool recvBuffRegistered = false; 
+        mscclpp_ncclBuffIsRegistered(comm->mscclpp_comm, sendBuff, count, &sendBuffRegistered);
+        mscclpp_ncclBuffIsRegistered(comm->mscclpp_comm, sendBuff, count, &recvBuffRegistered);
+        const bool graphMode = threadLocalStatus.captureStatus != mscclNoCapture;
+        const bool buffsRegistedNonGraphMode = !graphMode && sendBuffRegistered && recvBuffRegistered;
         /* check if one rank per GPU and graph mode is enabled */
-        if ((threadLocalStatus.captureStatus != mscclNoCapture) && comm->mscclCompatible && nBytes > 0 && (nBytes & 31) == 0) {
+
+        if ((graphMode || buffsRegistedNonGraphMode) && comm->mscclCompatible && nBytes > 0 && (nBytes & 31) == 0) {
           bool isManagedBuffer = false;
           if (sendBuff) CUDACHECK(hipPointerGetAttribute(&isManagedBuffer, HIP_POINTER_ATTRIBUTE_IS_MANAGED, const_cast<void*>(sendBuff)));
           if (!isManagedBuffer && recvBuff) CUDACHECK(hipPointerGetAttribute(&isManagedBuffer, HIP_POINTER_ATTRIBUTE_IS_MANAGED, const_cast<void*>(recvBuff)));
