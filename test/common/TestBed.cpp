@@ -625,7 +625,8 @@ namespace RcclUnitTesting
                                std::vector<bool>           const& inPlaceList,
                                std::vector<bool>           const& managedMemList,
                                std::vector<bool>           const& useHipGraphList,
-                               bool                        const& enableSweep)
+                               bool                        const& enableSweep,
+                               bool                        const& userBufferRegister)
   {
     // Sort numElements in descending order to cut down on # of allocations
     std::vector<int> sortedN = numElements;
@@ -713,7 +714,7 @@ namespace RcclUnitTesting
           // Only allocate once for largest size
           if (neIdx == 0)
           {
-            this->AllocateMem(inPlaceList[ipIdx], managedMemList[mmIdx]);
+            this->AllocateMem(inPlaceList[ipIdx], managedMemList[mmIdx], -1, -1, -1, userBufferRegister);
             if (testing::Test::HasFailure())
             {
               isCorrect = false;
