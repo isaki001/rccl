@@ -1,0 +1,26 @@
+diff --git a/apps/nccl/src/allreduce.hpp b/apps/nccl/src/allreduce.hpp
+index d82f682..afa80be 100644
+--- a/apps/nccl/src/allreduce.hpp
++++ b/apps/nccl/src/allreduce.hpp
+@@ -256,8 +256,8 @@ uint64_t flag = *flagPtr;
+   // This version of allreduce only works for single nodes
+   if (worldSize != nRanksPerNode) return;
+ //uint64_t flag = *flagPtr;
+-if(rank == 0 && threadIdx.x == 0 && blockIdx.x == 0)
+-  printf("allreduce7 flag:%u\n", flag);
++//if(rank == 0 && threadIdx.x == 0 && blockIdx.x == 0)
++//  printf("allreduce7 flag:%u\n", flag);
+ #if defined(ENABLE_NPKIT)
+   extern __shared__ int4 NpkitSharedMem[];
+   NpKitEvent* event_buffer = (NpKitEvent*)((char*)NpkitSharedMem);
+@@ -1019,8 +1019,8 @@ cudaError_t allreduce(T* buff, T* scratch, T* resultBuff, mscclpp::DeviceHandle<
+         nelems, devReadBarrierFlag, NpKit::GetGpuEventCollectContexts(), NpKit::GetCpuTimestamp());
+ #else
+     hipMemcpyAsync(devReadBarrierFlag, readBarrierFlag, sizeof(uint64_t), hipMemcpyHostToDevice, stream);
+-    if(rank == 0)
+-      printf("Rank 0 invoking allreduce7 flag:%u\n", *readBarrierFlag);
++    //if(rank == 0)
++    //  printf("Rank 0 invoking allreduce7 flag:%u\n", *readBarrierFlag);
+     allreduce7<<<nBlocks, nThreadsPerBlock, 0, stream>>>(buff, scratch, resultBuff, smChannels, channelInOffset,
+                                                          channelScratchOffset, rank, nRanksPerNode, worldSize, nelems,
+                                                          devReadBarrierFlag);
