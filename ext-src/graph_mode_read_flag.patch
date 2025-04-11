@@ -20,7 +20,7 @@ index 9f46ff9..3a53b0a 100644
 +void increment_flag(void* flag){
 +  if(!flag)
 +    return;
-+  uint32_t* tmp = static_cast<uint32_t*>(flag);
++  uint64_t* tmp = static_cast<uint64_t*>(flag);
 +  (*tmp)++;
 +}
 +
