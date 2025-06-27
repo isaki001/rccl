@@ -1953,7 +1953,9 @@ ncclResult_t parseA2a8P(struct ncclTopoSystem* system, struct ncclTopoGraph* gra
   INFO(NCCL_GRAPH, "%s", line);
   system->type |= RCCL_TOPO_4P2H_ROME;
   parseOptions(system, romeTopoModels[i].options);
-
+#if defined(__gfx950__)
+    system->tuning = 6;
+#endif
   // create 4P2H based on reference and remapped ids
   switch (graph->pattern) {
   case NCCL_TOPO_PATTERN_RING:
@@ -2152,6 +2154,9 @@ ncclResult_t parseRome4P2H(struct ncclTopoSystem* system, struct ncclTopoGraph* 
   }
   INFO(NCCL_GRAPH, "%s", line);
   parseOptions(system, romeTopoModels[i].options);
+#if defined(__gfx950__)
+    system->tuning = 6;
+#endif
 
   // create 4P2H based on reference and remapped ids
   switch (graph->pattern) {
@@ -2339,7 +2344,9 @@ ncclResult_t parse1H16P(struct ncclTopoSystem* system, struct ncclTopoGraph* gra
   INFO(NCCL_GRAPH, "%s", line);
   system->type |= RCCL_TOPO_16P1H;
   parseOptions(system, romeTopoModels[i].options);
-
+#if defined(__gfx950__)
+    system->tuning = 6;
+#endif
 
   // create 16P1H based on reference and remapped ids
   NCCLCHECK(parseGraph(romeTopoModels[i].ringBase, system, graph, rdm, nnets > 1 ? n : NULL, false));
