@@ -320,7 +320,7 @@ inline __host__ __device__ void ncclP2pPartBounds(int nParts, int part, size_t b
 }
 
 // implemented in channel.h
-inline __host__ uint8_t ncclP2pChannelBaseForRound(struct ncclComm* comm, int p2pRound, int p2pBatchEnable);
+inline __host__ uint8_t ncclP2pChannelBaseForRound(struct ncclComm* comm, int p2pRound);
 
 // ncclP2pChannelToPart and ncclP2pChannelForPart are inverses. The device code
 // uses ncclP2pChannelToPart to determine which part "this" channel is responsible for.
@@ -432,7 +432,7 @@ constexpr size_t ncclDevWorkSize(enum ncclDevWorkType type) {
         type == ncclDevWorkTypeColl ? sizeof(ncclDevWorkColl) : sizeof(ncclDevWorkCollReg);
 }
 
-#define NCCL_MAX_DEV_WORK_BATCH_BYTES 128
+#define NCCL_MAX_DEV_WORK_BATCH_BYTES 512
 #define NCCL_MAX_DEV_WORK_BATCH_COLLS (NCCL_MAX_DEV_WORK_BATCH_BYTES/sizeof(ncclDevWorkColl))
 #define NCCL_MAX_DEV_WORK_P2P_PER_BATCH 2
 #define NCCL_MAX_DEV_WORK_P2P_ELEMENTS 2
