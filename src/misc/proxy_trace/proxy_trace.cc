@@ -168,7 +168,8 @@ std::string facebook_rccl::ProxyTrace::dump() {
       }
     }
   }
-
+  
+  result += fmt::format("finishedOps\n");
   // add the recent finished ops as well
   for (const auto &keyStr_proxyOpStr : finishedOps) {
     sortedDumpStrMap[keyStr_proxyOpStr.first] = keyStr_proxyOpStr.second;
