@@ -972,7 +972,7 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gp
       while (nChannelsMax*comm->nRanks > comm->p2pnChannels && nChannelsMax > 1) nChannelsMax /= 2;
       //allow upto channels requires to drive the NICs
       nNetChannels = std::max(netCountByBw, nChannelsMax);
-      INFO(NCCL_INIT, "channels per net-peer nChannelsMax:%i nNetChannels:%i", nChannelsMax, nNetChannels);
+      INFO(NCCL_INIT, "channels per net-peer nChannelsMax:%i nNetChannels:%i comm->p2pnChannels:%i", nChannelsMax, nNetChannels, comm->p2pnChannels);
     }
     *nChannels = nNetChannels;
   }

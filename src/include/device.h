@@ -335,6 +335,8 @@ inline __host__ int ncclP2pChannelForPart(int nP2pChannels, int base, int part, 
   }
 }
 inline __device__ int ncclP2pChannelToPart(int nP2pChannels, int base, int channel, int nParts, int nNodes) {
+  //if(threadIdx.x == 0 && blockIdx.x == 0)
+  //  printf("ncclP2pChannelToPart nP2pChannels:%d base:%d channel:%d nParts:%d nNodes:%d part:%i\n", nP2pChannels, base, channel, nParts, nNodes, (channel - base * nParts) & (nP2pChannels-1));
   if (nNodes > 2) {
     // Only works because nP2pChannels is pow2
     int nChannelsLog2 = countOneBits(nP2pChannels-1);

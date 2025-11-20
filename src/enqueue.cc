@@ -981,6 +981,8 @@ static ncclResult_t addP2pToPlan(
       struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
       for (int dir=0; dir <= 1; dir++) {
         int peerRank = dir ? sendRank : recvRank;
+        INFO(NCCL_INIT, "addP2pToPlan rank:%i peerRank:%i channelId:%i part:%i dir:%i base:%i round:%i", comm->rank, peerRank, channelId, part, dir, base, p2pRound);
+        INFO(NCCL_INIT, "addP2pToPlan-csv,%i, %i,%i,%i,%i,%i,%i", comm->rank, peerRank, channelId, part, dir, base, p2pRound);
         struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex[dir]]
                                          : &channelPeers[peerRank]->recv[connIndex[dir]];
         protoLL[dir] &= conn->conn.buffs[NCCL_PROTO_LL] != nullptr && !IsArchMatch(comm->topo->nodes[GPU].nodes[0].gpu.gcn, "gfx12");
@@ -1134,6 +1136,7 @@ static ncclResult_t addP2pToPlan(
   }
 
   nChannelsMax = std::max(nChannels[0], nChannels[1]);
+  assert(nChannelsMax <= 1);
   for (int part=0; part < nChannelsMax; part++) {
     int incWorkCounter = -1;
     int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part, comm->p2pnChannelsPerPeer, comm->nNodes);
@@ -1146,6 +1149,7 @@ static ncclResult_t addP2pToPlan(
       return ncclInvalidUsage;
     }
     // Add proxy ops.
+
     for (int dir=0; dir < nProxyOps; dir++) {
       // Partition steps across channels.
       int nParts = dir ? work->nSendChannels : work->nRecvChannels;
@@ -1602,6 +1606,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
   if (planner->nTasksColl + planner->nTasksP2p != 0) {
     do {
+      INFO(NCCL_INIT, "ncclLaunchPrepare resetting wipPlan");
       memset(&planner->wipPlan, 0, sizeof(planner->wipPlan));
 
       struct ncclKernelPlan* plan = ncclMemoryPoolAlloc<struct ncclKernelPlan>(&comm->memPool_ncclKernelPlan, &comm->memPermanent);
@@ -2611,7 +2616,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     planner->nTasksP2p += 1;
 
     // Mark channels that need pre-connect
-    if (comm->rank != peer) {
+    if (comm->rank != peer) 
+    {
       if (!(isSendNotRecv ? planner->peers[peer].sendSeen : planner->peers[peer].recvSeen)) {
         // planner->peers[peer].send/recvSeen is private to each comm, so we need to set it anyway.
         (isSendNotRecv ? planner->peers[peer].sendSeen : planner->peers[peer].recvSeen) = true;
@@ -2623,6 +2629,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         uint8_t base = ncclP2pChannelBaseForRound(comm, round, rcclParamP2pBatchEnable());
         for (int c=0; c < comm->p2pnChannelsPerPeer; c++) {
           int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, c, comm->p2pnChannelsPerPeer, comm->nNodes);
+          INFO(NCCL_INIT, "taskAppend-csv,%i, %i,%i,%i,%i,%i,%i", comm->rank, peer, channelId, c, isSendNotRecv ? 1 : 0, base, round);
+
           if (isSendNotRecv) {
             if (comm->channels[channelId].peers[peer]->send[1].hasSeen == 0) { // P2P uses only 1 connector
               // the send/recv connector is shared among split shared comms. We need to set hasSeen to
