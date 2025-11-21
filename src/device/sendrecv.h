@@ -22,7 +22,8 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     bool useLargeChunk = (work->sendIpcReg && ncclShmem.comm.isAllNvlink) || work->sendNetReg;
     int chunkSize = useLargeChunk ? NCCL_MAX_NET_SIZE : u32fp8Decode(work->sendChunkSize_u32fp8);
     int stepSize = useLargeChunk ? NCCL_MAX_NET_SIZE : ncclShmem.comm.p2pChunkSize;
-
+    //if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+    //  printf("[%i] global rank:%i at runSend\n", blockIdx.x, ncclShmem.comm.rank);
 #if defined(ENABLE_NPKIT)
     bool isNpKitThread = (tid == 0);
     int npKitCtxIdx = blockIdx.x * NCCL_MAX_DEV_WORK_P2P_ELEMENTS + group;
@@ -81,6 +82,9 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     bool useLargeChunk = (work->recvIpcReg && ncclShmem.comm.isAllNvlink) || work->recvNetReg;
     int chunkSize = useLargeChunk ? NCCL_MAX_NET_SIZE : u32fp8Decode(work->recvChunkSize_u32fp8);
     int stepSize = useLargeChunk ? NCCL_MAX_NET_SIZE : ncclShmem.comm.p2pChunkSize;
+    if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+      printf("[%i] global rank:%i at runRecv\n", blockIdx.x, ncclShmem.comm.rank);
+
 
 #if defined(ENABLE_NPKIT)
     bool isNpKitThread = (tid == 0);
@@ -123,6 +127,8 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     do {
       int n = min(size_t(chunkSize), bytes-cursor);
       prims.directRecv(cursor, n);
+      if(threadIdx.x == 0 && ncclShmem.comm.rank == 32)
+        printf("[%i] global rank:%i received %d bytes at cursor %zu\n", blockIdx.x, ncclShmem.comm.rank, n, cursor);
       cursor += n;
     } while (cursor < bytes);
 
@@ -154,6 +160,9 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     struct ncclDevWorkP2p* works = (ncclDevWorkP2p*)ncclShmem.workStorage;
     int nWorks = ncclShmem.nWorks;
 
+    if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+      printf("[%i] rank:%i nWorks:%i\n", blockIdx.x, ncclShmem.comm.rank,  nWorks);
+
     if (wid == 0) {
       // Modify the memory range of each work[] to reflect this channel's
       // partition of the work. Since integer divides are very heavy it's
@@ -167,6 +176,8 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
         int nParts = isSend ? work->nSendChannels : work->nRecvChannels;
         int part = ncclP2pChannelToPart(work->nP2pChannels, work->channelBase, ncclShmem.channelId, ncclShmem.comm.p2pnChannelsPerPeer, ncclShmem.comm.nNodes);
         hasWork = (part < nParts);
+        if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+          printf("[%i] rank:%i nParts:%i hasWork:%i\n", blockIdx.x, ncclShmem.comm.rank,  nParts, hasWork);
         if (nParts != 0) {
           size_t partBeg, partEnd;
           ncclP2pPartBounds(nParts, part, bytes, &partBeg, &partEnd);

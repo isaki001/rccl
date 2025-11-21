@@ -175,12 +175,14 @@ static void addWorkBatchToPlan(
     enum ncclDevWorkType workType, int devFuncId, uint32_t workOffset,
     int p2pRound = -1, bool batchP2P = false
   ) {
+  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId:%i p2pRound:%i", channelId,  p2pRound);
   ncclKernelPlanner::WipPlan::Channel* chan = &comm->planner.wipPlan.channels[channelId];
   size_t workSize = ncclDevWorkSize(workType);
   // Conditions causing us to create a new blank batch.
   bool newBatch = (chan->workBatchQueue.tail == nullptr);
   struct ncclDevWorkBatch* batch = nullptr;
   if (!newBatch) {
+    INFO(NCCL_INIT, "channelId:%i p2pRound:%i batch is not new due to chan->workBatchQueue.tail != nullptr", channelId, p2pRound);
     batch = &chan->workBatchQueue.tail->batch;
     // All of the conditions that prevent us from appending to current batch.
     newBatch |= batch->workType != (uint8_t)workType;
@@ -194,13 +196,18 @@ static void addWorkBatchToPlan(
       newBatch |= (comm->nNodes > 2 && batchP2P)? (chan->wipBatch.nP2ps == NCCL_MAX_DEV_WORK_P2P_PER_BATCH) : (chan->wipBatch.nP2ps == 1);
       for (int i=0; i < chan->wipBatch.nP2ps; i++) {
         newBatch |= p2pRound == chan->wipBatch.p2pRounds[i];
+        INFO(NCCL_INIT, "batch p2pOp:%i channel:%i newBatch:%i checking rounds:%i vs %i", i, channelId, newBatch, p2pRound, chan->wipBatch.p2pRounds[i]);
       }
     }
   }
+  else
+    INFO(NCCL_INIT, "channelId:%i p2pRound:%i batch is new due to chan->workBatchQueue.tail == nullptr", channelId, p2pRound);
   // Conditions causing us to create an extension batch (prev->nextExtends=1)
   uint32_t offset = newBatch ? 0 : (workOffset - batch->offsetBase);
   bool extendBatch = 63*workSize < offset;
   extendBatch |= 0 != offset%workSize;
+  INFO(NCCL_INIT, "channelId:%i p2pRound:%i newBatch:%i extendBatch:%i", channelId, p2pRound, newBatch, extendBatch);
+
   if (newBatch || extendBatch) {
     if (!newBatch) batch->nextExtends = extendBatch; // Extending the previous batch.
     struct ncclWorkBatchList* batchNode = ncclMemoryStackAlloc<ncclWorkBatchList>(&comm->memScoped);
@@ -234,6 +241,8 @@ static void addWorkBatchToPlan(
     // We need to ensure that a single batch doesn't have multiple p2p's
     // of the same round since they would use the same connections.
     chan->wipBatch.p2pRounds[chan->wipBatch.nP2ps++] = p2pRound;
+      INFO(NCCL_INIT, "Ioannis rank %d batch added channelId=%d, chan->wipBatch.nP2ps=%d, round=%d workBytes:%zu",
+         comm->rank, channelId, chan->wipBatch.nP2ps, p2pRound, chan->wipBatch.workBytes);
   }
 }
 
@@ -1260,6 +1269,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
 
       if (sendRank == comm->rank && send->buff == recv->buff) {
         // Skip send to self in-place (we don't need to support this).
+        INFO(NCCL_INIT, "Ioannis P2P-SKIP rank %d: SKIPPING in-place send-to-self, round=%d, sendRank=%d, recvRank=%d, bytes=%ld",
+          comm->rank, round, sendRank, recvRank, sendBytes);
         ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
         ncclIntruQueueDequeue(&peers[recvRank].recvQueue);
         ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, send);
@@ -2630,6 +2641,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         for (int c=0; c < comm->p2pnChannelsPerPeer; c++) {
           int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, c, comm->p2pnChannelsPerPeer, comm->nNodes);
           INFO(NCCL_INIT, "taskAppend-csv,%i, %i,%i,%i,%i,%i,%i", comm->rank, peer, channelId, c, isSendNotRecv ? 1 : 0, base, round);
+          INFO(NCCL_INIT, "taskAppend, peer:%i, channelId:%i, part:%i, dir:%i, base:%i, round:%i", comm->rank, peer, channelId, c, isSendNotRecv ? 1 : 0, base, round);
 
           if (isSendNotRecv) {
             if (comm->channels[channelId].peers[peer]->send[1].hasSeen == 0) { // P2P uses only 1 connector

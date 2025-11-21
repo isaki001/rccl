@@ -2602,6 +2602,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             WARN("NET/IB: Got completion from peer %s with status=%d opcode=%d len=%u vendor err %u (%s)%s%s%s%s hca %s",
                 ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err, reqTypeStr[r->type],
                 localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
+            INFO(NCCL_INIT, "WARNING NET/IB: Got completion from peer %s with status=%d opcode=%d len=%u vendor err %u (%s)%s%s%s%s hca %s",
+                ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err, reqTypeStr[r->type],
+                localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
             return ncclRemoteError;
           }
 
@@ -2609,11 +2612,11 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
           ncclSocketGetAddr(r->sock, &addr);
           struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
 
-          #ifdef ENABLE_TRACE
-          char line[SOCKET_NAME_MAXLEN+1];
-          TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, i=%d",
-            ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], i);
-          #endif
+          //#ifdef ENABLE_TRACE
+          //char line[SOCKET_NAME_MAXLEN+1];
+         // TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, i=%d",
+           // ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], i);
+         // #endif
           if (req && req->type == NCCL_NET_IB_REQ_SEND) {
             for (int j = 0; j < req->nreqs; j++) {
               struct ncclIbRequest* sendReq = r->base->reqs+((wc->wr_id >> (j*8)) & 0xff);

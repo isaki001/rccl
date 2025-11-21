@@ -1261,9 +1261,13 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         sub->channelId, sub->nsteps, sub->nbytes, sub->peer);
       if (!sub->reg)
         sub->sendMhandle = resources->mhandles[args->protocol];
+      
+        INFO(NCCL_NET, "SEND-START rank %d: Starting send to peer=%d, nsubs=%d, nsteps=%d, nbytes=%ld, channelId=%d",
+       proxyState->tpRank, args->subs[s].peer, args->nsubs, args->subs[s].nsteps, args->subs[s].nbytes, args->subs[s].channelId);
     }
     args->state = ncclProxyOpProgress;
     args->hdp_flushed = 0;
+
   }
   args->idle = 1;
   if (args->state == ncclProxyOpProgress) {
@@ -1380,6 +1384,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             if (ignoreCompletion) *requestPtr = (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION;
             NCCLCHECK(proxyState->ncclNet->isend(resources->netSendComm, buff, size, resources->tpRank, sub->sendMhandle, phandle, requestPtr));
             if (*requestPtr != NULL) {
+                INFO(NCCL_INIT, "SEND-POST rank %d: peer=%d, size=%ld, buffSlot=%d, step=%d/%d, channelId=%d",
+                    proxyState->tpRank, sub->peer, size, buffSlot, sub->transmitted, sub->nsteps, sub->channelId);
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_NET_SEND_ENTRY) && defined(ENABLE_NPKIT_EVENT_NET_SEND_EXIT)
               NpKit::CollectCpuEvent(
                   NPKIT_EVENT_NET_SEND_ENTRY,
@@ -1475,6 +1481,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           }
           args->idle = 0;
           if (sub->done == sub->nsteps) {
+            INFO(NCCL_NET, "SEND-DONE rank %d: peer=%d, completed all %d steps, channelId=%d",
+                proxyState->tpRank, sub->peer, sub->nsteps, sub->channelId);
             args->done++;
             if (sub->ringAlgo && sub->ringAlgo->decRefCount() == 0) delete sub->ringAlgo;
             sub->ringAlgo = NULL;
