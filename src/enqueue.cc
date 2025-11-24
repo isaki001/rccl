@@ -1159,9 +1159,12 @@ static ncclResult_t addP2pToPlan(
     }
     // Add proxy ops.
 
+    INFO(NCCL_INIT, "addP2pToPlan nProxyOps rank:%i channelId:%i part:%i dir:all base:%i round:%i nProxyOps:%i", comm->rank, channelId, part, base, p2pRound, nProxyOps);
     for (int dir=0; dir < nProxyOps; dir++) {
       // Partition steps across channels.
       int nParts = dir ? work->nSendChannels : work->nRecvChannels;
+      INFO(NCCL_INIT, "addP2pToPlan prepare proxyOp rank:%i channelId:%i part:%i dir:%i base:%i round:%i nParts:%i work->nSendChannels:%i work->nRecvChannels:%i work->sendRank:%i work->recvRank:%i work->sendRank:%i", 
+        comm->rank, channelId, part, dir, base, p2pRound, nParts,work->nSendChannels, work->nRecvChannels, work->recvRank, work->sendRank);
       void* addr = dir ? work->sendAddr : work->recvAddr;
       size_t bytes = dir ? work->sendBytes : work->recvBytes;
       if (rcclParamEnableProxyTrace()) {
@@ -1169,15 +1172,20 @@ static ncclResult_t addP2pToPlan(
       }
       proxyOps[dir].recvbuff = nullptr;
       if (nParts <= part) {
+        INFO(NCCL_INIT, "A addP2pToPlan noP2p rank:%i channelId:%i part:%i dir:%i base:%i round:%i", comm->rank, channelId, part, dir, base, p2pRound);
         proxyOps[dir].nsteps = 0;
       } else if (bytes == 0) {
+        INFO(NCCL_INIT, "B addP2pToPlan zero byte rank:%i channelId:%i part:%i dir:%i base:%i round:%i", comm->rank, channelId, part, dir, base, p2pRound);
         proxyOps[dir].nsteps = 1;
         proxyOps[dir].nbytes = 0;
       } else {
+        INFO(NCCL_INIT, "C addP2pToPlan non-zero byte proxyOp rank:%i channelId:%i part:%i dir:%i base:%i round:%i", comm->rank, channelId, part, dir, base, p2pRound);
         size_t chunkDataSize = u32fp8Decode(dir ? work->sendChunkSize_u32fp8 : work->recvChunkSize_u32fp8);
         size_t partBeg, partEnd;
         ncclP2pPartBounds(nParts, part, bytes, &partBeg, &partEnd);
         if (proxyOps[dir].reg) {
+          INFO(NCCL_INIT, "IOANNIS addP2pToPlan registered buffer proxyOp rank:%i channelId:%i part:%i dir:%i base:%i round:%i partBeg:%lu partEnd:%lu", 
+            comm->rank, channelId, part, dir, base, p2pRound, (unsigned long)partBeg, (unsigned long)partEnd);
           (dir ? proxyOps[dir].sendbuff : proxyOps[dir].recvbuff) = (uint8_t*)addr + partBeg;
           (dir ? proxyOps[dir].sendMhandle : proxyOps[dir].recvMhandle) = handles[dir][part];
           proxyOps[dir].nbytes = partEnd - partBeg;
@@ -1191,13 +1199,14 @@ static ncclResult_t addP2pToPlan(
           proxyOps[dir].nbytes = roundUp(proxyOps[dir].nbytes, sizeof(union ncclLLFifoLine));
         }
       }
-
+      INFO(NCCL_INIT, "addP2pToPlan proxyOp rank:%i channelId:%i part:%i dir:%i base:%i round:%i nsteps:%i nbytes:%lu", 
+        comm->rank, channelId, part, dir, base, p2pRound, proxyOps[dir].nsteps, (unsigned long)proxyOps[dir].nbytes);
       // Increment work counter for <send, recv> pair rather than individual p2p
       if (proxyOps[dir].nsteps && incWorkCounter < 0) {
         proxyOps[dir].incWorkCounter = true;
         incWorkCounter = dir;
       }
-
+      
       if (proxyOps[dir].nsteps != 0) {
         // Calculate the opCount after adding batch since then the batch count will
         // equal one plus the batch index this p2p settled in.

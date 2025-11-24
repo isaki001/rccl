@@ -160,8 +160,8 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     struct ncclDevWorkP2p* works = (ncclDevWorkP2p*)ncclShmem.workStorage;
     int nWorks = ncclShmem.nWorks;
 
-    if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
-      printf("[%i] rank:%i nWorks:%i\n", blockIdx.x, ncclShmem.comm.rank,  nWorks);
+    if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0) && blockIdx.x == 0)
+      printf("RunWorkBatch::run [%i] rank:%i nWorks:%i\n", blockIdx.x, ncclShmem.comm.rank,  nWorks);
 
     if (wid == 0) {
       // Modify the memory range of each work[] to reflect this channel's
@@ -176,13 +176,16 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
         int nParts = isSend ? work->nSendChannels : work->nRecvChannels;
         int part = ncclP2pChannelToPart(work->nP2pChannels, work->channelBase, ncclShmem.channelId, ncclShmem.comm.p2pnChannelsPerPeer, ncclShmem.comm.nNodes);
         hasWork = (part < nParts);
-        if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
-          printf("[%i] rank:%i nParts:%i hasWork:%i\n", blockIdx.x, ncclShmem.comm.rank,  nParts, hasWork);
+
         if (nParts != 0) {
+
           size_t partBeg, partEnd;
           ncclP2pPartBounds(nParts, part, bytes, &partBeg, &partEnd);
           (isSend ? work->sendAddr : work->recvAddr) = (char*)(isSend ? work->sendAddr : work->recvAddr) + partBeg;
           (isSend ? work->sendBytes : work->recvBytes) = partEnd - partBeg;
+          if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+            printf("RunWorkBatch::run - if (workIx < nWorks) =  [%i] rank:%i nParts:%i hasWork:%i partBeg:%lu\n", 
+                blockIdx.x, ncclShmem.comm.rank,  nParts, hasWork, partBeg);
         }
       }
       // Coverity reports a possible thread divergence due to not all threads participating in the collective.

@@ -139,6 +139,7 @@ private:
       repeat = 50;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         __builtin_amdgcn_s_sleep(1);
+
         connStepCache = loadStepValue(connStepPtr);
         if (checkAbort(flags, Aborted, spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
@@ -202,6 +203,10 @@ private:
 
   template<int Recv, int Send>
   inline __device__ void postPeer(bool dataStored) {
+    if(tid == 0 && blockIdx.x == 1 &&  ncclShmem.comm.rank == 0){
+      printf("Ioannis kernel side PostPeer before fence rank:%d peer:UNKNOWN channel:%i address:%p value:%i step:%i\n",  
+        ncclShmem.comm.rank, blockIdx.x, (void*)connStepPtr, (long)(*connStepPtr), step);
+      }
     if (skip_fence){
       __atomic_signal_fence(__ATOMIC_SEQ_CST);
       barrier_generic(asm volatile("s_waitcnt lgkmcnt(0) vmcnt(0)"), nworkers, barrier_next, barriers);
@@ -219,6 +224,12 @@ private:
       STORE((unsigned int *)next_hdp_reg, 0x1);
 
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
+
+      if(tid == 0 && blockIdx.x == 0 &&  ncclShmem.comm.rank == 0){
+        printf("Ioannis kernel side PostPeer updating connStepPtr rank:%d peer:UNKNOWN channel:%i address:%p value:%i incremenented:%d extra:%d\n",  
+          ncclShmem.comm.rank, blockIdx.x, (void*)connStepPtr, (long)(*connStepPtr), step, StepPerSlice);
+        }
+
       step += StepPerSlice;
       STORE(connStepPtr, step);
     }
@@ -508,6 +519,12 @@ public:
 
   template<int Recv, int Send, typename Fn>
   __device__ __forceinline__ void process(Fn &&fn, uint32_t sendDirectFlag = 0, uint32_t recvDirectFlag = 0) {
+      if(tid == 0 && blockIdx.x == 0 &&  ncclShmem.comm.rank == 0){
+        printf("[%i] send:%i recv:%i processing with flags Recv=%d, Send=%d\n", Send, Recv, blockIdx, Recv, Send);
+    }
+
+
+    
     #pragma unroll 1
     for (int slice=0; slice < SlicePerChunk; slice++) {
       if (tid < nworkers) {
@@ -561,6 +578,14 @@ public:
         } else {
           nsend = fan.nsend();
         }
+        
+          if (tid == 0 && blockIdx.x == 0 &&  ncclShmem.comm.rank == 0) {
+            printf("GPU CH0 PRE-FN: nsend=%d, nrecv=%d\n", nsend, nrecv);
+            for (int i = 0; i < nsend; i++) {
+                printf("GPU CH0 PRE-FN: dsts[%d]=%p, dstSizes[%d]=%d\n",i, ncclShmem.groups[group].dsts[i], i, ncclShmem.groups[group].dstSizes[i]);
+            }
+          }
+        
         fn.template operator()<SlicePerChunk, 0, Recv*MaxRecv, 0, Send*MaxSend, MultimemSrcs, MultimemDsts>
           (tid, nworkers, slice, stepSize * StepPerSlice,
             nrecv, ncclShmem.groups[group].srcs,

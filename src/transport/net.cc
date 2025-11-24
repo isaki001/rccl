@@ -1261,7 +1261,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         sub->channelId, sub->nsteps, sub->nbytes, sub->peer);
       if (!sub->reg)
         sub->sendMhandle = resources->mhandles[args->protocol];
-      
+        
         INFO(NCCL_NET, "SEND-START rank %d: Starting send to peer=%d, nsubs=%d, nsteps=%d, nbytes=%ld, channelId=%d",
        proxyState->tpRank, args->subs[s].peer, args->nsubs, args->subs[s].nsteps, args->subs[s].nbytes, args->subs[s].channelId);
     }
@@ -1311,6 +1311,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (sub->transmitted < sub->posted && sub->transmitted < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
+        
         uint64_t tail = sub->base + sub->transmitted;
         facebook_rccl::updateProxyOpCounter(proxyState->proxyTrace, sub->traceKey,
           facebook_rccl::ProxyCounterTypes::RECV_TAIL, *recvTail);
@@ -1321,7 +1322,13 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         facebook_rccl::updateProxyOpCounter(
           proxyState->proxyTrace, sub->traceKey,
           facebook_rccl::ProxyCounterTypes::FIFO_SZ_OR_HEAD_CACHE, connFifo[buffSlot].size);
+        
           
+          INFO(NCCL_NET, "SEND-CHECK rank %i peer=%i: buffSlot=%i, size=%d, recvTail=%ld, tail=%ld, transmitted=%d/%d", 
+            proxyState->tpRank, sub->peer, buffSlot, connFifo[buffSlot].size,  *recvTail, tail, sub->transmitted, sub->nsteps);  
+          INFO(NCCL_INIT, "Ioannis proxy side reading recvTail rank:%i peer:%d channel:%i address:%p value:%i",  proxyState->tpRank, sub->peer, sub->channelId, (void*)recvTail, *recvTail);
+        
+
         if (connFifo[buffSlot].size != -1 && (*recvTail > tail || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
           int size = connFifo[buffSlot].size;
@@ -1363,6 +1370,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             }
           }
           if (ready) {
+            if(proxyState->tpRank == 0 && (sub->peer == 32 || sub->peer == 33)) 
+              INFO(NCCL_INIT, "SEND-READY rank %d peer=%d: READY=1, buffSlot=%d, size=%d, posting send", proxyState->tpRank, sub->peer, buffSlot, size);
             // flush HDP if not done
             if (resources->curr_hdp_reg && args->hdp_flushed < *recvTail) {
               args->hdp_flushed = *recvTail;
@@ -1410,6 +1419,10 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
               args->idle = 0;
               continue;
             }
+          }
+          else{
+            if(proxyState->tpRank == 0 && (sub->peer == 32 || sub->peer == 33)) 
+              INFO(NCCL_NET, "SEND-READY rank %d peer=%d: READY=0, buffSlot=%d, protocol=%d, waiting for GPU",proxyState->tpRank, sub->peer, buffSlot, p);
           }
         }
       }
