@@ -173,9 +173,9 @@ static ncclResult_t addProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelP
 static void addWorkBatchToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int channelId,
     enum ncclDevWorkType workType, int devFuncId, uint32_t workOffset,
-    int p2pRound = -1, bool batchP2P = false
+    int p2pRound = -1, bool batchP2P = false, int channelBase = -1
   ) {
-  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId:%i p2pRound:%i batchP2P:%i", channelId,  p2pRound, batchP2P);
+  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId:%i p2pRound:%i batchP2P:%i channelBase:%i", channelId,  p2pRound, batchP2P, channelBase);
   ncclKernelPlanner::WipPlan::Channel* chan = &comm->planner.wipPlan.channels[channelId];
   size_t workSize = ncclDevWorkSize(workType);
   // Conditions causing us to create a new blank batch.
@@ -197,6 +197,12 @@ static void addWorkBatchToPlan(
       for (int i=0; i < chan->wipBatch.nP2ps; i++) {
         newBatch |= p2pRound == chan->wipBatch.p2pRounds[i];
         INFO(NCCL_INIT, "batch p2pOp:%i channel:%i newBatch:%i checking rounds:%i vs %i", i, channelId, newBatch, p2pRound, chan->wipBatch.p2pRounds[i]);
+      }
+      // CRITICAL FIX: Check if channelBase matches
+      if (channelBase != -1 && chan->wipBatch.nP2ps > 0 && chan->wipBatch.channelBase != channelBase) {
+        newBatch = true;
+        INFO(NCCL_INIT, "Ioannis FORCE NEW BATCH: channelId:%i different channelBase old:%i new:%i", 
+          channelId, chan->wipBatch.channelBase, channelBase);
       }
     }
   }
@@ -229,6 +235,7 @@ static void addWorkBatchToPlan(
       // a new batch
       chan->wipBatch.workBytes = 0;
       chan->wipBatch.nP2ps = 0;
+      chan->wipBatch.channelBase = channelBase;
       // We don't count extension batches since this is used to derive a proxyOpCount,
       // and we wan't all ops which are fused together to have the same value.
       chan->nWorkBatchesP2p += (workType == ncclDevWorkTypeP2p ? 1 : 0);
@@ -241,8 +248,8 @@ static void addWorkBatchToPlan(
     // We need to ensure that a single batch doesn't have multiple p2p's
     // of the same round since they would use the same connections.
     chan->wipBatch.p2pRounds[chan->wipBatch.nP2ps++] = p2pRound;
-      INFO(NCCL_INIT, "Ioannis rank %d batch added channelId=%d, chan->wipBatch.nP2ps=%d, round=%d workBytes:%zu",
-         comm->rank, channelId, chan->wipBatch.nP2ps, p2pRound, chan->wipBatch.workBytes);
+      INFO(NCCL_INIT, "Ioannis rank %d batch added channelId=%d, chan->wipBatch.nP2ps=%d, round=%d channelBase=%d workBytes:%zu",
+         comm->rank, channelId, chan->wipBatch.nP2ps, p2pRound, chan->wipBatch.channelBase, chan->wipBatch.workBytes);
   }
 }
 
@@ -1110,6 +1117,11 @@ static ncclResult_t addP2pToPlan(
   work->sendConnIndex = connIndex[1];
   work->sendOpCount = sendOpCount;
   work->nRecvChannels = nChannels[0];
+  
+  if (comm->rank == 0) {
+    INFO(NCCL_INIT, "Ioannis WORK-CREATED rank:%d sendRank:%d recvRank:%d p2pRound:%d base:%d nP2pChannels:%d nSendChannels:%d nRecvChannels:%d sendBytes:%ld recvBytes:%ld",
+      comm->rank, sendRank, recvRank, p2pRound, base, work->nP2pChannels, work->nSendChannels, work->nRecvChannels, work->sendBytes, work->recvBytes);
+  }
   work->recvProtoLL = protoLL[0];
   work->recvNetReg = netRegistered[0];
   work->recvIpcReg = ipcRegistered[0];
@@ -1156,7 +1168,7 @@ static ncclResult_t addP2pToPlan(
     plan->channelMask.masks[channelId/64] |= uint64_t(1)<<(channelId%64);
     // Add batch first.
     int funcIdx = ncclDevFuncId_P2p();
-    addWorkBatchToPlan(comm, plan, channelId, ncclDevWorkTypeP2p, funcIdx, workOffset, p2pRound, batchP2PEnableEnv);
+    addWorkBatchToPlan(comm, plan, channelId, ncclDevWorkTypeP2p, funcIdx, workOffset, p2pRound, batchP2PEnableEnv, base);
     if (funcIdx < 0) {
       WARN("%s: unsupported collective. Please ensure the collective has been enabled in build.", __func__);
       return ncclInvalidUsage;
