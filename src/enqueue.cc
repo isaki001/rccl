@@ -175,7 +175,7 @@ static void addWorkBatchToPlan(
     enum ncclDevWorkType workType, int devFuncId, uint32_t workOffset,
     int p2pRound = -1, bool batchP2P = false
   ) {
-  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId:%i p2pRound:%i", channelId,  p2pRound);
+  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId:%i p2pRound:%i batchP2P:%i", channelId,  p2pRound, batchP2P);
   ncclKernelPlanner::WipPlan::Channel* chan = &comm->planner.wipPlan.channels[channelId];
   size_t workSize = ncclDevWorkSize(workType);
   // Conditions causing us to create a new blank batch.
@@ -977,6 +977,8 @@ static ncclResult_t addP2pToPlan(
   //replacing line below with ncclP2pChannelBaseForRound(comm, p2pRound, batchP2P) can cause issues due to ncclP2pChannelBaseForRound calling the same routine
   //channel base computed in taskAppend and here must be the same, but in taskAppend the call happens once and is cached for later usage, which is why it wouldn't be consistent with the call below
   uint8_t base = ncclP2pChannelBaseForRound(comm, p2pRound, batchP2PEnableEnv);
+  INFO(NCCL_INIT, "Ioannis addP2pToPlan BASE: rank:%d sendRank:%d recvRank:%d p2pRound:%d base:%d batchP2PEnableEnv:%d", 
+    comm->rank, sendRank, recvRank, p2pRound, base, batchP2PEnableEnv);
   if (comm->p2pNet) {
     for (int dir = 0; dir <= 1; dir++) {
       if (bytes[dir] > rcclParamP2pNetThreshold())
@@ -1149,6 +1151,8 @@ static ncclResult_t addP2pToPlan(
   for (int part=0; part < nChannelsMax; part++) {
     int incWorkCounter = -1;
     int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part, comm->p2pnChannelsPerPeer, comm->nNodes);
+    INFO(NCCL_INIT, "Ioannis addP2pToPlan CHANNEL: rank:%d sendRank:%d recvRank:%d p2pRound:%d part:%d channelId:%d base:%d work->sendRank:%d work->recvRank:%d", 
+      comm->rank, sendRank, recvRank, p2pRound, part, channelId, base, work->sendRank, work->recvRank);
     plan->channelMask.masks[channelId/64] |= uint64_t(1)<<(channelId%64);
     // Add batch first.
     int funcIdx = ncclDevFuncId_P2p();
@@ -1259,6 +1263,10 @@ static ncclResult_t scheduleP2pTasksToPlan(
       int recvRank = comm->p2pSchedule[round].recvRank;
       struct ncclTaskP2p* send = ncclIntruQueueHead(&peers[sendRank].sendQueue);
       struct ncclTaskP2p* recv = ncclIntruQueueHead(&peers[recvRank].recvQueue);
+      if (comm->rank == 0 && (send != nullptr || recv != nullptr)) {
+        INFO(NCCL_INIT, "Ioannis P2P-SCHEDULE rank:%d round:%d sendRank:%d recvRank:%d hasSend:%d hasRecv:%d nTasksP2p:%d",
+          comm->rank, round, sendRank, recvRank, send != nullptr, recv != nullptr, comm->planner.nTasksP2p);
+      }
       if (send == nullptr && recv == nullptr) continue;
 
       if (sendRank == comm->rank) {
@@ -1276,10 +1284,15 @@ static ncclResult_t scheduleP2pTasksToPlan(
       void* sendBuff = send ? send->buff : nullptr;
       void* recvBuff = recv ? recv->buff : nullptr;
 
-      if (sendRank == comm->rank && send->buff == recv->buff) {
+      if (comm->rank == 0 && (send != nullptr || recv != nullptr)) {
+        INFO(NCCL_INIT, "Ioannis P2P-PROCESSING rank:%d round:%d sendRank:%d recvRank:%d sendBuff:%p recvBuff:%p sendBytes:%ld recvBytes:%ld",
+          comm->rank, round, sendRank, recvRank, sendBuff, recvBuff, sendBytes, recvBytes);
+      }
+
+      if (sendRank == comm->rank && send != nullptr && recv != nullptr && send->buff == recv->buff) {
         // Skip send to self in-place (we don't need to support this).
-        INFO(NCCL_INIT, "Ioannis P2P-SKIP rank %d: SKIPPING in-place send-to-self, round=%d, sendRank=%d, recvRank=%d, bytes=%ld",
-          comm->rank, round, sendRank, recvRank, sendBytes);
+        INFO(NCCL_INIT, "Ioannis P2P-SKIP rank %d: SKIPPING in-place send-to-self, round=%d, sendRank=%d, recvRank=%d, bytes=%ld sendBuff:%p recvBuff:%p",
+          comm->rank, round, sendRank, recvRank, sendBytes, sendBuff, recvBuff);
         ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
         ncclIntruQueueDequeue(&peers[recvRank].recvQueue);
         ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, send);
@@ -1291,6 +1304,10 @@ static ncclResult_t scheduleP2pTasksToPlan(
           return ncclSuccess;
         }
         struct ncclTaskP2p* p2pTasks[2] = { recv, send };
+        if (comm->rank == 0) {
+          INFO(NCCL_INIT, "Ioannis P2P-ADDING rank:%d round:%d sendRank:%d->? recvRank:%d<-? sendBytes:%ld recvBytes:%ld",
+            comm->rank, round, sendRank, recvRank, sendBytes, recvBytes);
+        }
         NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, send ? send->opCount : 0, recv ? recv->opCount : 0, p2pTasks));
         if (send != nullptr) {
           ncclIntruQueueDequeue(&peers[sendRank].sendQueue);

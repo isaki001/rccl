@@ -16,6 +16,9 @@
 #include "network/unpack/unpack_defs.h"
 #define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 
+#define MY_BLOCK 0
+
+
 #define __syncwarp()
 
 #ifdef __GFX9__
@@ -575,6 +578,8 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
       // Coverity reports a possible thread divergence due to not all threads participating in the collective.
       // However, the code ensures that the participation is on a per-warp basis.
       // coverity[device_thread_diverged:FALSE]
+      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0 )
+        printf("Ioannis initial loading of Batch ncclKernelMain: blockIdx.x=%d, tid:%i channelId=%d, comm.rank=%d\n", blockIdx.x, tid, ncclShmem.channelId, ncclShmem.comm.rank);
       loadWorkBatchToShmem(subtid, subtn, args, /*batchIx=*/blockIdx.x);
     } break;
   }
@@ -609,6 +614,8 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
       else
         ncclDevFuncTable_4[ncclShmem.funcId]();
 #else
+      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0 )
+        printf("Ioannis calling ncclShmem.funcId ncclKernelMain: blockIdx.x=%d, tid:%i channelId=%d, comm.rank=%d\n", blockIdx.x, tid, ncclShmem.channelId, ncclShmem.comm.rank);
       if (COLL_UNROLL == 1)
         NCCL_CALL_FUNCTIONS_1(ncclShmem.funcId);
       else if (COLL_UNROLL == 2)
@@ -632,6 +639,8 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
         break;
     }
     profiler(STOP);
+    if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0 )
+        printf("Ioannis loading of Batch:%i ncclKernelMain: blockIdx.x=%d, tid:%i channelId=%d, comm.rank=%d\n", batchIx, blockIdx.x, tid, ncclShmem.channelId, ncclShmem.comm.rank);
     loadWorkBatchToShmem(tid%WARP_SIZE, tn, args, batchIx);
     __syncthreads();
     if (COLLTRACE && tid%WARP_SIZE == 0) traceKernelLaunch(ncclCollTraceCollLaunchType, batchIx);

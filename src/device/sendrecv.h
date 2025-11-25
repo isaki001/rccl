@@ -12,6 +12,8 @@
 #include "npkit/npkit.h"
 #endif
 
+#define MY_BLOCK 0
+
 template<typename T, typename RedOp>
 struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
   static_assert(sizeof(T)==1, "SendRecv only works on single byte types T.");
@@ -160,8 +162,8 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     struct ncclDevWorkP2p* works = (ncclDevWorkP2p*)ncclShmem.workStorage;
     int nWorks = ncclShmem.nWorks;
 
-    if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0) && blockIdx.x == 0)
-      printf("RunWorkBatch::run [%i] rank:%i nWorks:%i\n", blockIdx.x, ncclShmem.comm.rank,  nWorks);
+    if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0) && blockIdx.x == MY_BLOCK)
+      printf("RunWorkBatch::run() [%i] rank:%i nWorks:%i\n", blockIdx.x, ncclShmem.comm.rank,  nWorks);
 
     if (wid == 0) {
       // Modify the memory range of each work[] to reflect this channel's
@@ -170,27 +172,38 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
       int workIx = lane%16;
       int isSend = lane < 16 ? 0 : 1;
       bool hasWork = false;
+
       if (workIx < nWorks) {
+        //with 256 Threads, 64 thread warp, 4 threads would enter here to compute part of this channel and apply PartBounds
+        //with 32 threads per warp, 2 threads woudl enter here to compute part of this channel and apply PartBounds
         struct ncclDevWorkP2p* work = &works[workIx];
         size_t bytes = isSend ? work->sendBytes : work->recvBytes;
         int nParts = isSend ? work->nSendChannels : work->nRecvChannels;
         int part = ncclP2pChannelToPart(work->nP2pChannels, work->channelBase, ncclShmem.channelId, ncclShmem.comm.p2pnChannelsPerPeer, ncclShmem.comm.nNodes);
         hasWork = (part < nParts);
+        
+        if(blockIdx.x == MY_BLOCK && (ncclShmem.comm.rank == 0))
+            printf("RunWorkBatch::run - (workIx < nWorks) =  tid:%i [%i] rank:%i part:%i nParts:%i hasWork:%i workIx:%i nWorks:%i\n", 
+                tid, blockIdx.x, ncclShmem.comm.rank,  part, nParts, hasWork, workIx, nWorks);
 
         if (nParts != 0) {
 
           size_t partBeg, partEnd;
           ncclP2pPartBounds(nParts, part, bytes, &partBeg, &partEnd);
+
+          //we must index properly into the two ops in the batch so we can initialize properly
           (isSend ? work->sendAddr : work->recvAddr) = (char*)(isSend ? work->sendAddr : work->recvAddr) + partBeg;
           (isSend ? work->sendBytes : work->recvBytes) = partEnd - partBeg;
-          if(threadIdx.x == 0 && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
-            printf("RunWorkBatch::run - if (workIx < nWorks) =  [%i] rank:%i nParts:%i hasWork:%i partBeg:%lu\n", 
-                blockIdx.x, ncclShmem.comm.rank,  nParts, hasWork, partBeg);
+          if(threadIdx.x == 0 && blockIdx.x == MY_BLOCK && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+            printf("RunWorkBatch::run - if (workIx < nWorks) =  [%i] rank:%i part:%i nParts:%i hasWork:%i partBeg:%lu\n", 
+                blockIdx.x, ncclShmem.comm.rank,  part, nParts, hasWork, partBeg);
         }
       }
       // Coverity reports a possible thread divergence due to not all threads participating in the collective.
       // However, the code ensures that the participation is on a per-warp basis.
       // coverity[device_thread_diverged:FALSE]
+
+      //our warp is 64, but nWorks is 2 this is probably fine
       uint32_t mask = __ballot(hasWork);
       if (lane == 0) {
         shared->workSendMask = mask>>16;
@@ -207,6 +220,7 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     //   __float2int_rd(__fdividef(float(x),float(y))).
 
     // nWarpPerWork = nWarps/nWorks
+
     int nWarpPerWork = __popcll(__ballot(nWorks*(lane+1) <= nWarps));
     int nRecvWarpPerWork = nWarpPerWork/2;
     int nSendWarpPerWork = nWarpPerWork - nRecvWarpPerWork;
@@ -216,9 +230,11 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     nWarpPerWork = nSendWarpPerWork + nRecvWarpPerWork;
     // The work index this warp belongs to: workIx = wid/nWarpPerWork
     int workIx = __popcll(__ballot((lane+1)*nWarpPerWork <= wid));
-
+    
     __syncthreads(); // Wait for works[] and shared->* to be updated by warp=0
-
+    if(threadIdx.x == 0 && blockIdx.x == MY_BLOCK && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32)){
+      printf("RunWorkBatch::run rank:%i block:%i tid:%i nWarpPerWork:%i nRecvWarpPerWork:%i nSendWarpPerWork:%i\n", ncclShmem.comm.rank,  blockIdx.x, tid, nWarpPerWork, nRecvWarpPerWork, nSendWarpPerWork);
+    }
     uint32_t workSendMask = shared->workSendMask;
     uint32_t workRecvMask = shared->workRecvMask;
 
@@ -248,6 +264,10 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     bool isCopy = work->sendRank == ncclShmem.comm.rank;
     bool isSend = !hasRecv || (hasSend && subtid < nSendWarpPerWork*WARP_SIZE);
 
+    if(blockIdx.x == MY_BLOCK && (ncclShmem.comm.rank == 0))
+      printf("RunWorkBatch::run - workIx:%i rank:%i isCopy:%i hasSend:%i hasRecv:%i isSend:%i group:%i subtid:%i subtn:%i\n", 
+          workIx, ncclShmem.comm.rank, isCopy, hasSend, hasRecv, isSend, group, subtid, subtn);
+
     if (!isCopy && hasSend && hasRecv) {
       // Translate thread ids to reflect just this send or recv as opposed to whole work.
       if (isSend) {
@@ -261,6 +281,9 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
 
     if (isCopy) {
 #if defined(__gfx942__) || defined(__gfx950__)
+      if(threadIdx.x == 0 && blockIdx.x == MY_BLOCK && (ncclShmem.comm.rank == 0 || ncclShmem.comm.rank == 32))
+        printf("RunWorkBatch::run - reduceCopy called - [%i] rank:%i workIx:%i isCopy sendBytes:%lu\n", 
+            blockIdx.x, ncclShmem.comm.rank, workIx, work->sendBytes);
       reduceCopy<COLL_UNROLL*2, 0, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>
         (subtid, subtn, 0, nullptr, false, 1, &work->sendAddr, 1, &work->recvAddr, (ssize_t)work->sendBytes);
 #else

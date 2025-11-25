@@ -15,6 +15,9 @@
 #include "network/unpack/unpack.h"
 #include <cassert>
 
+#define MY_BLOCK 0
+#define MY_RANK 0
+
 enum primsMode {
   primsModeDefault = 0,
   primsModePatRs = 1,
@@ -203,10 +206,8 @@ private:
 
   template<int Recv, int Send>
   inline __device__ void postPeer(bool dataStored) {
-    if(tid == 0 && blockIdx.x == 1 &&  ncclShmem.comm.rank == 0){
-      printf("Ioannis kernel side PostPeer before fence rank:%d peer:UNKNOWN channel:%i address:%p value:%i step:%i\n",  
-        ncclShmem.comm.rank, blockIdx.x, (void*)connStepPtr, (long)(*connStepPtr), step);
-      }
+    if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+        printf("Ioannis kernel side postPeer entered tid:%i rank:%d peer:UNKNOWN channel:%i dataStored:%i\n", tid, ncclShmem.comm.rank, blockIdx.x, dataStored);
     if (skip_fence){
       __atomic_signal_fence(__ATOMIC_SEQ_CST);
       barrier_generic(asm volatile("s_waitcnt lgkmcnt(0) vmcnt(0)"), nworkers, barrier_next, barriers);
@@ -220,14 +221,17 @@ private:
 #endif
     }
 
-    if ((flags & Send*RolePostSend) && next_hdp_reg)
+    if ((flags & Send*RolePostSend) && next_hdp_reg){
+      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+        printf("Ioannis kernel side tid:%i, updating next_hdp_reg rank:%d peer:UNKNOWN channel:%i dataStored:%i\n", tid, ncclShmem.comm.rank, blockIdx.x, dataStored);
       STORE((unsigned int *)next_hdp_reg, 0x1);
+    }
 
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
 
-      if(tid == 0 && blockIdx.x == 0 &&  ncclShmem.comm.rank == 0){
-        printf("Ioannis kernel side PostPeer updating connStepPtr rank:%d peer:UNKNOWN channel:%i address:%p value:%i incremenented:%d extra:%d\n",  
-          ncclShmem.comm.rank, blockIdx.x, (void*)connStepPtr, (long)(*connStepPtr), step, StepPerSlice);
+      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK ){
+        printf("Ioannis kernel side postPeer updating connStepPtr rank:%d tid:%i peer:UNKNOWN channel:%i address:%p value:%i incremenented:%d extra:%d dataStored:%i\n",  
+          ncclShmem.comm.rank, tid, blockIdx.x, (void*)connStepPtr, (long)(*connStepPtr), step, StepPerSlice, dataStored);
         }
 
       step += StepPerSlice;
@@ -300,6 +304,8 @@ private:
             /* NVLS can have srcs[0] == dsts[0], but we cannot enter this "if branch",
             * so we need to check whether MultimemSrcs and MultimemDsts are 0. */
             && MultimemSrcs == 0 && MultimemDsts == 0 && !Src) {
+          //if(tid == 0 && blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+            //printf("Ioannis genericOp DirectRecv and non-null src == dst \n");
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send && Dst && ncclShmem.groups[group].srcs[0] != ncclShmem.groups[group].dsts[1]) {
 
@@ -338,6 +344,8 @@ private:
 
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
+          //if(tid == 0 && blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+           // printf("Ioannis genericOp directSend !Directt\n");
           // For broadcast in CollNet to do empty send
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_REDUCE_OR_COPY_MULTI_ENTRY)
           if (tid == 0) {
@@ -373,6 +381,8 @@ private:
 #endif
 
         } else if (ncclShmem.groups[group].srcs[0] && ncclShmem.groups[group].dsts[0]) {
+          //if(tid == 0 && blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+            //printf("Ioannis genericOp non-null src/dst\n");
 #if defined(ENABLE_NPKIT) && defined(ENABLE_NPKIT_EVENT_PRIM_SIMPLE_REDUCE_OR_COPY_MULTI_ENTRY)
           if (tid == 0) {
             NpKit::CollectGpuEvent(NPKIT_EVENT_PRIM_SIMPLE_REDUCE_OR_COPY_MULTI_ENTRY, sliceSize*sizeof(T), 0, NPKIT_GET_GPU_TIMESTAMP(),
@@ -389,6 +399,8 @@ private:
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
           if (Send && Dst && ncclShmem.groups[group].dsts[1] == nullptr) {
+            if(tid == 0 && blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+              printf("genericOp non-null src/dst if\n");
             // this case should only be directCopySend() with registered buffers and send to net peer
             reduceCopy<Unroll, useAcc && Dst, RedOp, T,
               0, Recv + Src, Recv * MaxRecv + Src,
@@ -398,6 +410,13 @@ private:
                 1, ncclShmem.groups[group].dsts,
                 workSize);
           } else {
+            if(tid == 64 && blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+            printf("Ioannis genericOp non-null src/dst else calling reduceCopy tid:%i block:%i rank:%i workSize:%i\n", tid, blockIdx.x, ncclShmem.comm.rank, workSize);
+            //======================================================================================
+            //======================================================================================
+            //THIS IS WHERE WE GO
+            //======================================================================================
+            //======================================================================================
             reduceCopy<Unroll, useAcc && Dst, RedOp, T,
               MultimemSrcs, Recv + Src, Recv * MaxRecv + Src,
               MultimemDsts, Send + Dst, Send * MaxSend + Dst, PreOpSrcs, Pipeline>
@@ -422,6 +441,8 @@ private:
 #endif
 
         } else {
+          //if(tid == 0 && blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+           // printf("Ioannis genericOp else src/dst\n");
           // we will come here when calling prims.directSend with net peer,
           // in this case, ncclShmem.groups[group].dsts[0] == NULL, so we
           // skip data flush.
@@ -620,6 +641,9 @@ private:
   template <int DirectRecv1, int DirectSend1, int Recv, int Send>
   __device__ __forceinline__ void
   ScatterGatherOp(intptr_t inpIx, intptr_t outIx, ssize_t totalElem, int peerElem, ssize_t peerOffset, int skip, int shift, bool postOp) {
+    if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == MY_RANK )
+      printf("Ioannis ScatterGatherOp tid:%i block:%i rank:%i\n", tid, blockIdx.x, ncclShmem.comm.rank);
+
     constexpr int DirectRecv = /*1 &&*/ Direct && DirectRecv1;
     constexpr int DirectSend = /*1 &&*/ Direct && DirectSend1;
     int offset = 0; // slice offset
@@ -804,6 +828,15 @@ public:
       // coverity[dead_error_line]
       while (nsend < MaxSend && sendPeers[nsend] != -1) nsend++;
       this->fan = Fan(nrecv, nsend);
+      
+      // Debug: Log peer counts
+      if (tid == 0 && blockIdx.x == MY_BLOCK && ncclShmem.comm.rank == MY_RANK) {
+        printf("Ioannis Primitives constructor: rank:%d tid:%i channel:%d nrecv:%d nsend:%d nthreads:%d MaxRecv:%d MaxSend:%d\n",
+          ncclShmem.comm.rank, tid, blockIdx.x, nrecv, nsend, nthreads, MaxRecv, MaxSend);
+        printf("Ioannis sendPeers (%i): ", MaxSend);
+        for (int i = 0; i < MaxSend; i++) printf("%d ", sendPeers[i]);
+        printf("\n");
+      }
 
       constexpr int ThreadPerSync =
         MaxSend >= 16 || MaxRecv >= 16 ? 32 : // NVLS may have an arity > 8. In that case increase the size of the groups
@@ -823,6 +856,12 @@ public:
       else if (tid < nrecv+nsend)           { flags |= RoleWaitSend; index = tid-nrecv; }
       else if (nthreads-nsend <= tid)       { flags |= RolePostSend; index = tid-(nthreads-nsend); }
       else if (nthreads-nrecv-nsend <= tid) { flags |= RolePostRecv; index = tid-(nthreads-nrecv-nsend); }
+
+      // Debug: Log role assignment for tid 0
+      if (blockIdx.x == MY_BLOCK && ncclShmem.comm.rank == MY_RANK) {
+        printf("Ioannis Primitives tid:%i flags:0x%x index:%d nthreads-nsend:%d nthreads-nrecv-nsend:%d\n",
+          tid, flags, index, nthreads-nsend, nthreads-nrecv-nsend);
+      }
 
       if (flags & (RoleWaitRecv|RolePostRecv)) peer = recvPeers[index];
       if (flags & (RoleWaitSend|RolePostSend)) peer = sendPeers[index];
