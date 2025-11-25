@@ -1324,11 +1324,12 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           facebook_rccl::ProxyCounterTypes::FIFO_SZ_OR_HEAD_CACHE, connFifo[buffSlot].size);
         
           
-          INFO(NCCL_NET, "SEND-CHECK rank %i peer=%i: buffSlot=%i, size=%d, recvTail=%ld, tail=%ld, transmitted=%d/%d", 
-            proxyState->tpRank, sub->peer, buffSlot, connFifo[buffSlot].size,  *recvTail, tail, sub->transmitted, sub->nsteps);  
-          INFO(NCCL_INIT, "Ioannis proxy side reading recvTail rank:%i peer:%d channel:%i address:%p value:%i",  proxyState->tpRank, sub->peer, sub->channelId, (void*)recvTail, *recvTail);
-        
+          INFO(NCCL_NET, "SEND-CHECK rank %i peer=%i: channel=%i buffSlot=%i, size=%d, recvTail=%ld, tail=%ld, transmitted=%d/%d", 
+            proxyState->tpRank, sub->peer, sub->channelId, buffSlot, connFifo[buffSlot].size,  *recvTail, tail, sub->transmitted, sub->nsteps);  
 
+          INFO(NCCL_INIT, "Ioannis proxy side reading recvTail rank:%i peer:%d channel:%i address:%p value:%i",  
+            proxyState->tpRank, sub->peer, sub->channelId, (void*)recvTail, *recvTail);
+            
         if (connFifo[buffSlot].size != -1 && (*recvTail > tail || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
           int size = connFifo[buffSlot].size;
