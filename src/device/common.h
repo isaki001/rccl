@@ -287,10 +287,14 @@ __device__ __forceinline__ void loadWorkBatchToShmem(
 
     if (WARP_SIZE == 64) {
       if (uint64_t(batch.offsetBitset) & (1ull<<lane)) {
-        int nWorksBelow = __popc(uint64_t(batch.offsetBitset) & ((1ull<<lane)-1));
+        int nWorksBelow = __popcll(uint64_t(batch.offsetBitset) & ((1ull<<lane)-1));
         fnsOfBitset[nWorksBelow] = lane;
+        if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0 )
+          printf("Ioannis, nWorksBelow: %i\n", nWorksBelow);
       }
-      nWorks = __popc(uint64_t(batch.offsetBitset));
+      nWorks = __popcll(uint64_t(batch.offsetBitset));
+      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0 )
+        printf("Ioannis, nWorks: %i\n", nWorks);
     } else {
       // WARP_SIZE == 32
       if (uint32_t(batch.offsetBitset) & (1u<<lane)) {
@@ -578,7 +582,7 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
       // Coverity reports a possible thread divergence due to not all threads participating in the collective.
       // However, the code ensures that the participation is on a per-warp basis.
       // coverity[device_thread_diverged:FALSE]
-      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0 )
+      if(blockIdx.x == MY_BLOCK &&  ncclShmem.comm.rank == 0)
         printf("Ioannis initial loading of Batch ncclKernelMain: blockIdx.x=%d, tid:%i channelId=%d, comm.rank=%d\n", blockIdx.x, tid, ncclShmem.channelId, ncclShmem.comm.rank);
       loadWorkBatchToShmem(subtid, subtn, args, /*batchIx=*/blockIdx.x);
     } break;
