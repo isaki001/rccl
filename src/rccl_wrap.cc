@@ -369,8 +369,12 @@ void rcclSetPxn(struct ncclComm* comm,  int& rcclPxnDisable) {
       rcclPxnDisable = pxnDisable = RCCL_VALUE_INVALID;
       return;
     }
-    const int ranksThreshold = (archGfx942)? 64 : 32;
-    pxnDisable = (comm->nRanks >= ranksThreshold)? 0 : 1;
+    if (archGfx942) {
+      const int ranksThreshold = 64;
+      pxnDisable = (comm->nRanks >= ranksThreshold) ? 0 : 1;
+    } else {
+      pxnDisable = 1;
+    }
     INFO(NCCL_INIT, "RCCL PXN set as %s", !pxnDisable? "enabled" : "disabled");
   }
   rcclPxnDisable = pxnDisable;
