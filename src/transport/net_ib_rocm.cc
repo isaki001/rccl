@@ -820,7 +820,7 @@ ncclResult_t rocmIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t pr
     ncclIbUseInline = ncclParamRocmIbUseInline();
     ncclIbGdrFlushDisable = ncclParamRocmIbGdrFlushDisable();
 
-    rcclAinicRoce = ((rcclParamAinicRoce() == 1) ? true : false);
+    rcclAinicRoce = (rcclUseAinic() ? true : false);
     if (rcclAinicRoce) {
       // for AINIC, these params are defaulted to enabled unless user forces it to disable(0).
       rcclCtsInlineData = ((rcclParamCtsInlineData() == 0) ? false : true);
