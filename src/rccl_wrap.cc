@@ -492,7 +492,11 @@ int parseFirmwareVersionImpl() {
   // using rocm-smi APIs for now to query MEC FW version
   // will switch to amd-smi APIs soon
   rsmi_status_t ret;
+#ifdef USE_ROCM_SMI_THREAD_ONLY_MUTEX
+  ret = rsmi_init(RSMI_INIT_FLAG_THRAD_ONLY_MUTEX);
+#else
   ret = rsmi_init(0);
+#endif
   if (ret != RSMI_STATUS_SUCCESS) return -1;
   ret = rsmi_dev_firmware_version_get(0, RSMI_FW_BLOCK_MEC, &fw_version);
   if (ret != RSMI_STATUS_SUCCESS) return -1;
