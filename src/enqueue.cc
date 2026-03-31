@@ -992,6 +992,8 @@ static ncclResult_t addP2pToPlan(
       struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
       for (int dir=0; dir <= 1; dir++) {
         int peerRank = dir ? sendRank : recvRank;
+        INFO(NCCL_INIT, "addP2pToPlan rank:%i peerRank:%i channelId:%i part:%i dir:%i base:%i round:%i", comm->rank, peerRank, channelId, part, dir, base, p2pRound);
+
         struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex[dir]]
                                          : &channelPeers[peerRank]->recv[connIndex[dir]];
         protoLL[dir] &= conn->conn.buffs[NCCL_PROTO_LL] != nullptr && !IsArchMatch(comm->topo->nodes[GPU].nodes[0].gpu.gcn, "gfx12");

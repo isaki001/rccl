@@ -310,7 +310,7 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
     tid = syscall(SYS_gettid);
   }
 
-  char buffer[1024];
+  char buffer[1048576];
   size_t len = 0;
 
   // WARNs come with an extra newline at the beginning.
