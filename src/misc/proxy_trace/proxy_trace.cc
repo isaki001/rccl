@@ -11,7 +11,7 @@
 #include "proxy.h"
 #include <map>
 
-constexpr int32_t kFinishedProxyOpItems = 32;
+constexpr int32_t kFinishedProxyOpItems = 2048;
 static std::unordered_map<facebook_rccl::ProxyOpStepStatus, std::string>
     proxyStepStatusStrMap = {
         {facebook_rccl::ProxyOpStepStatus::INIT, "INIT"},
